@@ -517,7 +517,8 @@ input[type=range]{padding:0}
     <div id="crumbs"><b>LifeOS Pro</b> / Today</div>
     <div class="tb-spacer"></div>
     <button id="installBtn" class="tb-btn" style="display:none" onclick="installApp()"><i data-lucide="monitor-down"></i>Install</button>
-    <span class="chip" id="dateChip"></span>
+    <span class="chip" id="verChip" style="color:var(--teal);font-weight:800;border-color:var(--teal)">v2.2</span>
+      <span class="chip" id="dateChip"></span>
     <div id="liveTimer" onclick="stopTimer()" title="Click to stop"></div>
     <button class="tb-btn" onclick="openTimerModal()" title="Focus timer"><i data-lucide="timer"></i></button>
     <button class="tb-btn" onclick="openSearch()" title="Search (Ctrl+/)"><i data-lucide="search"></i></button>
@@ -2970,7 +2971,8 @@ async function applyRemotePayload(p){
   await loadStores();renderAll();renderSettings();renderSyncUI();
 }
 async function syncPush(manual){
-  if(SYNC.code){return npPush(manual)}
+  if(SYNC.token){ /* GitHub first — it works everywhere */}
+  else if(SYNC.code){return npPush(manual)}
   if(!SYNC.token)return manual&&toast('Create a Sync Code or add a GitHub token (Settings → Data → Cloud Sync)','err');
   try{
     const payload=await buildSyncPayload();
@@ -3007,7 +3009,7 @@ async function syncPull(manual){
   try{return await _pullDo(manual)}finally{release()}
 }
 async function _pullDo(manual){
-  if(SYNC.code&&SYNC.code!=='__new__')return npPull(manual);
+  if(!SYNC.token&&SYNC.code&&SYNC.code!=='__new__')return npPull(manual);
   if(!SYNC.token)return manual&&toast('Tap "Sync with my other device" (or paste a GitHub token below) first','err');
   if(!SYNC.gistId){
     if(manual)toast('Looking for your sync data on GitHub…');
@@ -3033,8 +3035,9 @@ async function _pullDo(manual){
 }
 async function syncAuto(){if(SYNC.auto&&(SYNC.code||(SYNC.token&&SYNC.gistId))){await syncPush(false)}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&SYNC.auto&&SYNC.code)syncPull(false)});
-const APP_VERSION='2.1-syncfix';
+const APP_VERSION='2.2-github';
 function renderSyncUI(){
+  const vc=document.getElementById('verChip');if(vc)vc.textContent='v'+APP_VERSION;
   const el=$('#syncInfo');if(!el)return;
   const vb=document.getElementById('verBadge');if(vb)vb.textContent='v'+APP_VERSION;
   const parts=['Version '+APP_VERSION];
@@ -3057,6 +3060,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)syncAuto()}
 
 
 async function syncWizard(){
+  if(SYNC.token){SYNC.code='';await saveSyncCfg(); /* token wins — drop broken codes */}
   if(SYNC.token){ /* GitHub mode: one tap does everything */
     toast('Syncing via GitHub…');
     await syncPush(true);
@@ -3100,6 +3104,7 @@ async function syncWizardEnterCode(){
   askConfirm('✅ Synced!','Everything from your other device is now on this device.\n\nBoth stay in sync automatically from now on.',()=>{},'Great');
 }
 async function syncWizard(){
+  if(SYNC.token){SYNC.code='';await saveSyncCfg(); /* token wins — drop broken codes */}
   if(SYNC.token){ /* GitHub mode: one tap does everything */
     toast('Syncing via GitHub…');
     await syncPush(true);
