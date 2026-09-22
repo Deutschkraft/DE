@@ -477,12 +477,13 @@ input[type=range]{padding:0}
   .block{background:none!important}
 }
 </style>
+<base target="_blank">
 </head>
 <body>
 <div id="ambient"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div id="grain"></div></div>
 <div id="app">
 <aside id="sidebar">
-  <div class="sb-head"><div class="sb-logo">L</div><div><b>LifeOS Pro</b><span id="sbUser">Personal Command Center</span></div></div>
+  <div class="sb-head"><div class="sb-logo">L</div><div><b>LifeOS Pro</b><span id="sbUser">v2.1 sync-fix · <span id='verBadge' style='color:var(--teal)'>check Settings → Data for version</span></span></div></div>
   <div class="sb-search"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="M21 21l-4.3-4.3"/></svg><input id="sbSearch" placeholder="Search…  Ctrl+K" readonly onclick="openPalette()"></div>
   <div class="sb-scroll" id="sbNav">
     <div class="sb-label">Main</div>
@@ -697,23 +698,17 @@ input[type=range]{padding:0}
           <button class="btn" onclick="document.getElementById('impCsv').click()"><i data-lucide="file-spreadsheet"></i>Tasks CSV</button>
           <input type="file" id="impCsv" accept=".csv" style="display:none" onchange="importCSV(event)">
         </div>
-        <label class="f">Cloud Sync — phone ↔ laptop (no account needed)</label>
-        <p style="font-size:12px;color:var(--muted);margin-bottom:8px">1) On your <b>first device</b>: click <b>Create sync code</b> and Push.<br>2) Copy the code shown below.<br>3) On your <b>other device</b>: paste the code, Save, then Pull.<br>From then on everything syncs automatically — tasks, notes, habits, goals <b>and your uploaded HTML space files</b>.</p>
+        <label class="f">📲 Sync with your other device — one click</label>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:10px">Share everything (tasks, notes, and your uploaded apps) between laptop and phone.</p>
+        <button class="btn btn-pri" style="width:100%;justify-content:center;padding:13px;font-size:14px" onclick="syncWizard()"><i data-lucide="smartphone"></i>Sync with my other device</button>
+        <button class="btn btn-ghost" style="width:100%;font-size:12px;margin-top:4px" onclick="syncWizardEnterCode()">I have a code from my other device — paste it</button>
+        <div id="syncInfo" style="font-size:11.5px;color:var(--faint);font-family:'JetBrains Mono',monospace;margin-top:8px">—</div>
+        <label class="f" style="margin-top:14px">⭐ Recommended: sync via GitHub (most reliable — use this if the button above fails)</label>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:6px">Create a token at github.com/settings/tokens → "Generate new token (classic)" → check only the <b>gist</b> box → Generate → copy it here. Same token on both devices — no codes needed.</p>
         <div class="set-grid">
-          <div><label class="f">Sync code</label><input id="syncCode" placeholder="paste code from your other device" style="width:100%"></div>
-          <div style="display:flex;gap:8px;align-items:flex-end"><button class="btn" onclick="createSyncCode()" title="Generate a new code on this device"><i data-lucide="key-round"></i>Create sync code</button></div>
-        </div>
-        <label style="display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px"><input type="checkbox" id="syncAutoChk" checked style="width:auto"> Auto-sync every 2 min & when app hides</label>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          <button class="btn btn-pri" onclick="saveSyncSettings();syncPush(true)"><i data-lucide="upload-cloud"></i>Push now</button>
-          <button class="btn" onclick="saveSyncSettings();syncPull(true)"><i data-lucide="download-cloud"></i>Pull now</button>
-        </div>
-        <p id="syncInfo" style="font-size:11.5px;color:var(--faint);font-family:'JetBrains Mono',monospace;margin-top:8px">—</p>
-        <details style="margin-top:10px"><summary style="font-size:12px;color:var(--muted);cursor:pointer">Advanced: sync via private GitHub Gist instead</summary>
-        <div class="set-grid" style="margin-top:8px">
           <div><label class="f">GitHub token</label><input id="syncToken" type="password" placeholder="ghp_..." style="width:100%"></div>
-          <div><label class="f">Gist ID (auto on first push)</label><input id="syncGist" placeholder="auto" style="width:100%"></div>
-        </div></details>
+          <div><label class="f">Gist ID (auto-filled, ignore)</label><input id="syncGist" placeholder="auto" style="width:100%"></div>
+        </div>
         <label class="f">Storage</label>
         <p id="storageInfo" style="font-size:12.5px;color:var(--muted)">—</p>
         <label class="f">Danger zone</label>
@@ -1088,6 +1083,8 @@ async function saveSpace(){
     await DB.spaces.add({name,color,icon,type:'upload',url:null,fileName:file.name,htmlKey,created:ts});}
   await loadStores();closeModal('spaceModal');renderSidebar();toast('Space created','ok');
   const newest=S.spaces[S.spaces.length-1];if(newest)setTimeout(()=>syncSpaceData(newest.id,{silent:false}),200);
+  if(SYNC.auto&&(SYNC.code||(SYNC.token&&SYNC.gistId)))setTimeout(()=>syncPush(false),900);
+  else toast('Tip: to see this space on your phone — Settings → Data → Cloud Sync → Create sync code, then paste the code on your phone','warn');
 }
 async function deleteSpace(id){askConfirm('Delete space?','The uploaded file will be removed.',async()=>{const sp=S.spaces.find(s=>s.id===id);if(sp&&sp.htmlKey)try{localStorage.removeItem('lifeos_sp_'+sp.htmlKey)}catch(e){}await DB.spaces.del(id);await loadStores();renderSidebar();if(currentView==='space')go('today');toast('Deleted','ok')})}
 function openSpace(id){
@@ -1104,7 +1101,8 @@ function openSpace(id){
   else{const html=localStorage.getItem('lifeos_sp_'+sp.htmlKey);$('#spSrc').textContent=(sp.fileName||'custom app')+' · stored locally';
     if(html)frame.src=URL.createObjectURL(new Blob([html],{type:'text/html'}));
     else frame.srcdoc='<body style="font-family:sans-serif;background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center"><div><h2>⚠ App file not found</h2><p>Re-add this space.</p></div></body>'}
-  renderSidebar();
+  renderSidebar();syncSpaceData(sp.id,{silent:true});
+  if(SYNC.code&&SYNC.auto)syncPull(false);
 }
 
 /* ---------- Space data import / live sync ---------- */
@@ -2890,8 +2888,8 @@ async function importCSV(e){
 }
 
 /* ---------- Cloud Sync via GitHub Gist (works from static hosting) ---------- */
-const SYNC={code:'',token:'',gistId:'',auto:true,lastRemoteAt:0};
-async function loadSyncCfg(){const c=await setting('syncCfg',null);if(c){SYNC.code=c.code||'';SYNC.token=c.token||'';SYNC.gistId=c.gistId||'';SYNC.auto=c.auto!==false;SYNC.lastRemoteAt=c.lastRemoteAt||0}}
+const SYNC={code:'',token:'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',gistId:'',auto:true,lastRemoteAt:0};
+async function loadSyncCfg(){const c=await setting('syncCfg',null);if(c){SYNC.code=c.code||'';SYNC.provider=c.provider||'';SYNC.token=(c.token!==undefined&&c.token!=='')?c.token:SYNC.token;SYNC.gistId=c.gistId||'';SYNC.auto=c.auto!==false;SYNC.lastRemoteAt=c.lastRemoteAt||0}}
 async function saveSyncCfg(){await setSetting('syncCfg',{...SYNC})}
 function collectLocalSpaces(){const o={};try{Object.keys(localStorage).filter(k=>k.indexOf('lifeos_sp_')===0).forEach(k=>{const v=localStorage.getItem(k);if(v&&v.length<800000)o[k]=v})}catch(e){}return o}
 async function buildSyncPayload(){
@@ -2901,34 +2899,62 @@ async function buildSyncPayload(){
     data:{items:S.items,pages:S.pages,blocks:S.blocks,projects:S.projects,tags:S.tags,habits:S.habits,habitLog:S.habitLog,goals:S.goals,timer_sessions:S.timer,spaces:S.spaces},
     settings:S.settings,localSpaces:collectLocalSpaces()};
 }
-/* --- Sync-code transport (no account/token needed; one-time code shared by you) --- */
+/* --- Multi-provider sync transport: tries services in order until one works --- */
+function normSyncUrl(c){c=String(c||'').trim();if(!c)return c;return /^https?:\/\//i.test(c)?c:'https://api.npoint.io/'+c.replace(/^\/+|\/+$/g,'')}
+const SYNC_PROVIDERS=[
+ {name:'npoint',
+  create:async c=>{const r=await fetch('https://api.npoint.io/',{method:'POST',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)throw new Error('npoint '+r.status);const j=await r.json();if(!j.id)throw new Error('npoint bad response');return 'https://api.npoint.io/'+j.id},
+  update:async(u,c)=>{const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)throw new Error('npoint '+r.status)},
+  read:async u=>{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}},
+ {name:'jsonkeeper',
+  create:async c=>{const r=await fetch('https://jsonkeeper.com/',{method:'POST',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)throw new Error('jsonkeeper '+r.status);const j=await r.json();if(!j.uri)throw new Error('jsonkeeper bad response');return j.uri},
+  update:async(u,c)=>{let r=await fetch(u,{method:'PUT',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)throw new Error('jsonkeeper '+r.status)},
+  read:async u=>{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}},
+ {name:'jsonstorage',
+  create:async c=>{const r=await fetch('https://api.jsonstorage.net/v1/json',{method:'POST',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)throw new Error('jsonstorage '+r.status);const j=await r.json();if(!j.uri)throw new Error('jsonstorage bad response');return j.uri},
+  update:async(u,c)=>{const r=await fetch(u,{method:'PUT',headers:{'Content-Type':'application/json'},body:c});if(!r.ok)throw new Error('jsonstorage '+r.status)},
+  read:async u=>{const r=await fetch(u);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}}
+];
+async function cloudCreate(content){
+  const errs=[];
+  for(const pr of SYNC_PROVIDERS){
+    try{SYNC.provider=pr.name;return await pr.create(content)}catch(e){errs.push(pr.name+': '+e.message)}
+  }
+  throw new Error('all sync services unreachable ('+errs.join(' | ')+'). Check internet, or retry in a minute — free services occasionally hiccup.');
+}
+function providerForUrl(u){u=String(u);if(u.indexOf('jsonkeeper')>=0)return'jsonkeeper';if(u.indexOf('jsonstorage')>=0)return'jsonstorage';return'npoint'}
+async function cloudUpdate(url,content){
+  SYNC.provider=providerForUrl(url);
+  const pr=SYNC_PROVIDERS.find(x=>x.name===SYNC.provider)||SYNC_PROVIDERS[0];
+  try{return await pr.update(url,content)}
+  catch(e){/* bin may have been dropped — recreate on a working provider */
+    const u=await cloudCreate(content);SYNC.code=u;await saveSyncCfg();return}
+}
+async function cloudRead(url){SYNC.provider=providerForUrl(url);const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+
 async function npPush(manual){
-  if(!SYNC.code)return manual&&toast('Create or paste a Sync Code first (Settings → Data → Cloud Sync)','err');
+  if(!SYNC.code)return manual&&toast('Tap "Sync with my other device" first to get your code','err');
   try{
     const payload=await buildSyncPayload();
     const content=JSON.stringify(payload);
-    if(content.length>900000)return manual&&toast('Payload too large for free sync (>900KB) — remove the largest uploaded space file or use JSON export','err');
-    let r;
+    if(content.length>900000)return manual&&toast('Data too large for free sync (>900KB) — remove old uploaded space files or use JSON export','err');
     if(SYNC.code==='__new__'){
-      r=await fetch('https://api.npoint.io/',{method:'POST',headers:{'Content-Type':'application/json'},body:content});
-      if(!r.ok)throw new Error('sync service '+r.status);
-      const g=await r.json();SYNC.code=g.id;await saveSyncCfg();
-      toast('Sync code created: '+SYNC.code+' — paste it once on your other device','ok');
+      const url=await cloudCreate(content);
+      SYNC.code=url;await saveSyncCfg();
+      SYNC.lastRemoteAt=payload.at;await setSetting('lastSyncAt',payload.at);renderSyncUI();
+      if(manual!==false)toast('Sync ready ✓','ok');
     }else{
-      r=await fetch('https://api.npoint.io/'+SYNC.code,{method:'POST',headers:{'Content-Type':'application/json'},body:content});
-      if(!r.ok)throw new Error('sync service '+r.status);
-      if(manual)toast('Synced ✓','ok');
+      await cloudUpdate(normSyncUrl(SYNC.code),content);
+      SYNC.lastRemoteAt=payload.at;await setSetting('lastSyncAt',payload.at);renderSyncUI();
+      if(manual)toast('Synced ✓ ('+SYNC.provider+')','ok');
     }
-    SYNC.lastRemoteAt=payload.at;await setSetting('lastSyncAt',payload.at);renderSyncUI();
-  }catch(e){if(manual)toast('Sync failed: '+e.message+' (check internet)','err')}
+  }catch(e){if(manual)toast('Sync failed: '+e.message,'err')}
 }
 async function npPull(manual){
   if(!SYNC.code||SYNC.code==='__new__')return manual&&toast('Paste your sync code first','err');
   try{
-    const r=await fetch('https://api.npoint.io/'+SYNC.code);
-    if(!r.ok)throw new Error('sync service '+r.status);
-    const p=await r.json();
-    if(!p||!p.data)return manual&&toast('Empty sync bin','err');
+    const p=await cloudRead(normSyncUrl(SYNC.code));
+    if(!p||!p.data)return manual&&toast('This code has no data yet — on the other device, tap the sync button once, then try again','err');
     const lastLocal=await setting('lastSyncAt',0);
     if(p.at<=lastLocal&&p.at<=SYNC.lastRemoteAt){if(manual)toast('Already up to date','ok');return}
     await applyRemotePayload(p);
@@ -2957,17 +2983,37 @@ async function syncPush(manual){
       SYNC.lastRemoteAt=payload.at;await setSetting('lastSyncAt',payload.at);
       toast('Sync created ✓ — other devices will now pull this data','ok');
     }else{
-      const r=await fetch('https://api.github.com/gists/'+SYNC.gistId,{method:'PATCH',headers,body:JSON.stringify({files:{'lifeos-sync.json':{content}}})});
+      let r=await fetch('https://api.github.com/gists/'+SYNC.gistId,{method:'PATCH',headers,body:JSON.stringify({files:{'lifeos-sync.json':{content}}})});
+      if(r.status===404){SYNC.gistId='';await saveSyncCfg();return syncPush(manual)}
       if(!r.ok)throw new Error('GitHub '+r.status);
       SYNC.lastRemoteAt=payload.at;await setSetting('lastSyncAt',payload.at);
-      if(manual)toast('Synced to cloud ✓','ok');
+      if(manual)toast('Synced to GitHub ✓','ok');
     }
     renderSyncUI();
   }catch(e){if(manual)toast('Sync failed: '+e.message,'err')}
 }
+async function findGistId(){
+  const r=await fetch('https://api.github.com/gists?per_page=100',{headers:{'Authorization':'Bearer '+SYNC.token}});
+  if(!r.ok)throw new Error('GitHub '+r.status);
+  const list=await r.json();
+  const g=(Array.isArray(list)?list:[]).find(x=>x.files&&x.files['lifeos-sync.json']);
+  return g?g.id:null;
+}
+let _pullLock=Promise.resolve();
 async function syncPull(manual){
-  if(SYNC.code)return npPull(manual);
-  if(!SYNC.token||!SYNC.gistId)return manual&&toast('Paste your Sync Code (or configure a GitHub token) first','err');
+  const run=_pullLock;let release;
+  _pullLock=new Promise(r=>release=r);
+  await run;
+  try{return await _pullDo(manual)}finally{release()}
+}
+async function _pullDo(manual){
+  if(SYNC.code&&SYNC.code!=='__new__')return npPull(manual);
+  if(!SYNC.token)return manual&&toast('Tap "Sync with my other device" (or paste a GitHub token below) first','err');
+  if(!SYNC.gistId){
+    if(manual)toast('Looking for your sync data on GitHub…');
+    try{SYNC.gistId=await findGistId();await saveSyncCfg()}catch(e){return manual&&toast('GitHub error: '+e.message,'err')}
+    if(!SYNC.gistId)return manual&&toast('No sync data found on GitHub yet — tap Push on your other device first','err');
+  }
   try{
     const r=await fetch('https://api.github.com/gists/'+SYNC.gistId,{headers:{'Authorization':'Bearer '+SYNC.token}});
     if(!r.ok)throw new Error('GitHub '+r.status);
@@ -2985,20 +3031,113 @@ async function syncPull(manual){
     toast('Synced from another device ✓ ('+new Date(p.at).toLocaleString('en-GB')+')','ok');
   }catch(e){if(manual)toast('Pull failed: '+e.message,'err')}
 }
-async function syncAuto(){if(SYNC.token&&SYNC.gistId&&SYNC.auto){await syncPush(false)}}
+async function syncAuto(){if(SYNC.auto&&(SYNC.code||(SYNC.token&&SYNC.gistId))){await syncPush(false)}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&SYNC.auto&&SYNC.code)syncPull(false)});
+const APP_VERSION='2.1-syncfix';
 function renderSyncUI(){
   const el=$('#syncInfo');if(!el)return;
-  if(SYNC.code&&SYNC.code!=='__new__')el.textContent='Sync code: '+SYNC.code+' · auto-sync '+(SYNC.auto?'ON':'OFF')+' · last: '+(SYNC.lastRemoteAt?new Date(SYNC.lastRemoteAt).toLocaleString('en-GB'):'never');
-  else if(SYNC.gistId)el.textContent='Linked via GitHub gist · auto-sync '+(SYNC.auto?'ON':'OFF');
-  else el.textContent='Not linked — click "Create sync code" on one device, then paste the code on your other devices';
+  const vb=document.getElementById('verBadge');if(vb)vb.textContent='v'+APP_VERSION;
+  const parts=['Version '+APP_VERSION];
+  if(SYNC.code&&SYNC.code!=='__new__')parts.push('code: '+SYNC.code);
+  if(SYNC.gistId)parts.push('gist linked');
+  parts.push('auto-sync '+(SYNC.auto?'ON':'OFF'));
+  if(SYNC.lastRemoteAt)parts.push('last: '+new Date(SYNC.lastRemoteAt).toLocaleString('en-GB'));
+  else parts.push('not linked yet');
+  el.textContent=parts.join(' · ');
 }
 function saveSyncSettings(){
-  SYNC.code=$('#syncCode').value.trim();SYNC.token=$('#syncToken').value.trim();SYNC.gistId=$('#syncGist').value.trim();SYNC.auto=$('#syncAutoChk').checked;
+  const t=$('#syncToken').value.trim();
+  SYNC.code=$('#syncCode').value.trim();SYNC.token=t===''?'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':t; /* empty box = use built-in token */
+  SYNC.gistId=$('#syncGist').value.trim();SYNC.auto=$('#syncAutoChk').checked;
   saveSyncCfg().then(()=>{renderSyncUI();toast('Sync settings saved','ok')});
 }
-function createSyncCode(){SYNC.code='__new__';saveSyncSettings();syncPush(true)}
+function createSyncCode(){SYNC.code='__new__';saveSyncCfg().then(()=>{renderSyncUI();syncPush(true)})}
 setInterval(syncAuto,120000);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)syncAuto()});
+
+
+async function syncWizard(){
+  if(SYNC.token){ /* GitHub mode: one tap does everything */
+    toast('Syncing via GitHub…');
+    await syncPush(true);
+    askConfirm('✅ Synced via GitHub','Your data is on your private GitHub gist.\n\nOn your other device: paste the SAME token (Settings → Data) and tap this same button.\n\nBoth devices stay in sync automatically after that.',()=>{},'Done');
+    return;
+  }
+  const alreadyLinked = SYNC.code && SYNC.code!=='__new__';
+  if(alreadyLinked){
+    /* already linked: just show status + push */
+    askConfirm('Already linked ✓','Your sync code: '+SYNC.code+'\n\nYour devices sync automatically every 2 minutes.\n\nTap "Push now" to send your latest data to the cloud immediately.',async()=>{
+      await syncPush(true);
+    },'Push now');
+    return;
+  }
+  /* not linked yet: create code + push + show simple instructions */
+  toast('Creating your sync code…');
+  SYNC.code='__new__';
+  await saveSyncCfg();
+  await syncPush(false); /* creates the bin */
+  if(SYNC.code==='__new__'||!SYNC.code){toast('Could not reach the sync service — check internet','err');return}
+  renderSyncUI();
+  /* show the code + instructions in a simple popup */
+  askConfirm('✅ Almost done — one last step',
+    'Your code is:\n\n        '+SYNC.code+'\n\nNow do this ONE thing:\n\n1. Open LifeOS on your other device (phone or laptop)\n2. Go to: Settings → Data → "Sync with my other device"\n3. Tap the button and enter this code\n\nThat\'s it! Both devices will stay in sync automatically from now on.',
+    ()=>{},'Got it');
+  try{await navigator.clipboard.writeText(SYNC.code)}catch(e){}
+  await syncPush(true); /* ensures the bin exists with full data before the other device pulls */
+}
+/* manual entry when user is the second device */
+async function syncWizardEnterCode(){
+  const code=prompt('Paste the code from your other device (it looks like https://…):');
+  if(!code||!code.trim())return;
+  const c=normSyncUrl(code);
+  toast('Checking code…');
+  try{
+    const p=await cloudRead(c);
+    if(!p||!p.data){askConfirm('Code has no data yet','This code is reachable but empty.\n\nOn your other device, tap "Sync with my other device" once, then try again.',()=>{},'OK');return}
+  }catch(e){askConfirm('Code not readable','Could not read "'+c+'".\n\nCheck for typos, or on the other device tap the sync button again to get a fresh code.',()=>{},'OK');return}
+  SYNC.code=c;await saveSyncCfg();
+  await syncPull(true);
+  askConfirm('✅ Synced!','Everything from your other device is now on this device.\n\nBoth stay in sync automatically from now on.',()=>{},'Great');
+}
+async function syncWizard(){
+  if(SYNC.token){ /* GitHub mode: one tap does everything */
+    toast('Syncing via GitHub…');
+    await syncPush(true);
+    askConfirm('✅ Synced via GitHub','Your data is on your private GitHub gist.\n\nOn your other device: paste the SAME token (Settings → Data) and tap this same button.\n\nBoth devices stay in sync automatically after that.',()=>{},'Done');
+    return;
+  }
+  const alreadyLinked = SYNC.code && SYNC.code!=='__new__';
+  if(alreadyLinked){
+    /* already linked: just show status + push */
+    askConfirm('Already linked ✓','Your sync code: '+SYNC.code+'\n\nYour devices sync automatically every 2 minutes.\n\nTap "Push now" to send your latest data to the cloud immediately.',async()=>{
+      await syncPush(true);
+    },'Push now');
+    return;
+  }
+  /* not linked yet: create code + push + show simple instructions */
+  toast('Creating your sync code…');
+  SYNC.code='__new__';
+  await saveSyncCfg();
+  await syncPush(false); /* creates the bin */
+  if(SYNC.code==='__new__'||!SYNC.code){toast('Could not reach the sync service — check internet','err');return}
+  renderSyncUI();
+  /* show the code + instructions in a simple popup */
+  askConfirm('✅ Almost done — one last step',
+    'Your code is:\n\n        '+SYNC.code+'\n\nNow do this ONE thing:\n\n1. Open LifeOS on your other device (phone or laptop)\n2. Go to: Settings → Data → "Sync with my other device"\n3. Tap the button and enter this code\n\nThat\'s it! Both devices will stay in sync automatically from now on.',
+    ()=>{},'Got it');
+  try{await navigator.clipboard.writeText(SYNC.code)}catch(e){}
+  await syncPush(true); /* ensures the bin exists with full data before the other device pulls */
+}
+/* manual entry when user is the second device */
+async function syncWizardEnterCode(){
+  const code=prompt('Paste the code from your other device:');
+  if(!code||!code.trim())return;
+  SYNC.code=code.trim();
+  await saveSyncCfg();
+  toast('Pulling your data…');
+  await syncPull(true);
+  if(SYNC.lastRemoteAt)askConfirm('✅ Synced!','Your data from the other device is now on this device.\n\nEverything stays in sync automatically from now on.',()=>{},'Great');
+}
 
 async function clearAllData(){
   askConfirm('Clear ALL data?','Everything will be erased. This cannot be undone.',()=>{
@@ -3028,7 +3167,7 @@ function renderSettings(){
   $('#setNotifInt').value=String(SET.notifInt);$('#setLead').value=String(SET.lead);
   $('#setAutoDaily').checked=SET.autoDaily!==false;
   $('#setPrompt1').value=SET.prompts[0]||'';$('#setPrompt2').value=SET.prompts[1]||'';$('#setPrompt3').value=SET.prompts[2]||'';
-  $('#syncCode').value=SYNC.code&&SYNC.code!=='__new__'?SYNC.code:'';$('#syncToken').value=SYNC.token;$('#syncGist').value=SYNC.gistId;$('#syncAutoChk').checked=SYNC.auto!==false;renderSyncUI();
+  $('#syncCode').value=SYNC.code&&SYNC.code!=='__new__'?SYNC.code:'';$('#syncToken').value=SYNC.token;$('#syncToken').placeholder='(a default token is built in — clear this box and save to use it)';$('#syncGist').value=SYNC.gistId;$('#syncAutoChk').checked=SYNC.auto!==false;renderSyncUI();
   $('#notifPerm').textContent='Notification permission: '+('Notification'in window?Notification.permission:'unsupported');
   $('#kbdBody').innerHTML=SHORTCUTS.map(([k,v])=>`<tr><td style="white-space:nowrap">${k.split(' / ').map(x=>`<kbd>${x}</kbd>`).join(' / ')}</td><td style="color:var(--muted)">${v}</td></tr>`).join('');
 }
